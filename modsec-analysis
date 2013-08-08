@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# This script assists with analyzing ModSecurity error logs on a web server.
+
+
+function show_usage()
+{
+	cat << EOF
+Usage: modsec-analysis <view type> <view options>
+
+  View Type:
+  all 				Displays all entries (formatted nicely).
+  internal			Displays all entries originating from the local network(s).
+  id				Displays the full transaction log of an error from the modsec_audit_log
+
+  View Options: (optional)
+  count <item>			Displays a count and listing of the items of that type from the ModSecurity entries.
+  search <text>			Searches the output for the given text
+
+EOF
+}
+
+if [ "$1" == "" ];then
+show_usage
+exit
+fi
+
+ERROR_LOG=/var/log/httpd/error_log
+MODSEC_AUDIT_LOG=/var/log/httpd/modsec_audit_log
+SEVERITY=CRITICAL
+
+#List of internal network IP addresses in file on lines like: "client 10." for IP addresses matching 10.* 
+#(used for sorting)
+INTERNAL_IP_LIST=$(dirname $0)/internalips
+
+case $1 in
+	all)
+		if [ "$2" == "count" ];then
+		  cat $ERROR_LOG | grep ModSecurity | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g' | grep "\["$3 | sort | uniq -c | sort -n | sed 's/ModSecurity://g'
+		elif [ "$2" == "search" ];then
+		  cat $ERROR_LOG | grep ModSecurity | grep "severity \"$SEVERITY\"" | grep $3 | sed 's/\[[a-zA-Z]/\n&/g'
+		else
+		  cat $ERROR_LOG | grep ModSecurity | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g'
+		fi
+	;;
+
+	#Only look at ModSecurity entries from internal IPs.
+	internal)
+		if [ "$2" == "count" ];then
+		  cat $ERROR_LOG | grep ModSecurity | grep -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g' | grep "\["$3 | sort | uniq -c | sort -n | sed 's/ModSecurity://g'
+		elif [ "$2" == "search" ];then
+		  cat $ERROR_LOG | grep ModSecurity | grep -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | grep $3 | sed 's/\[[a-zA-Z]/\n&/g'
+		else
+		  cat $ERROR_LOG | grep ModSecurity | grep -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g'
+		fi
+	;;
+
+	#Retrieve the full transaction log for a unique_id string.
+	id)
+		beginLine=$(grep -B1 -n $2 $MODSEC_AUDIT_LOG | head -n1)
+		beginNum=$(echo $beginLine | cut -d'-' -f1)
+		endLine=$(echo $beginLine | sed 's/'$beginNum-'//g' | sed 's/-A--/-Z--/g')
+		endNum=$(grep -n -e "$endLine" $MODSEC_AUDIT_LOG | head -n1 | cut -d':' -f1)
+
+		echo -en '\E[34m'
+		sed -n ''"$beginNum"','"$endNum"'p' $MODSEC_AUDIT_LOG
+		tput sgr0
+echo
+	;;
+
+	*)
+		show_usage
+	;;
+
+esac
+
+#Alternate format for getting stats that I may add (shows which rule was triggered).
+#grep ModSecurity /usr/local/apache/logs/error_log | sed -e 's#^.*\[id "\([0-9]*\).*hostname "\([a-z0-9\-\_\.]*\)"\].*uri "#\1 \2 #' | cut -d\" -f1 | sort -n | uniq -c | sort -n
