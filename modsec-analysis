@@ -10,7 +10,8 @@ Usage: modsec-analysis <view type> <view options>
 
   View Type:
   all 				Displays all entries (formatted nicely).
-  internal			Displays all entries originating from the local network(s).
+  internal			Displays all entries originating from inside the network(s).
+  external			Displays all entries originating from outside the network(s).
   id				Displays the full transaction log of an error from the modsec_audit_log
 
   View Options: (optional)
@@ -34,6 +35,7 @@ SEVERITY=CRITICAL
 INTERNAL_IP_LIST=$(dirname $0)/internalips
 
 case $1 in
+	#View all ModSecurity entries from all IPs.
 	all)
 		if [ "$2" == "count" ];then
 		  cat $ERROR_LOG | grep ModSecurity | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g' | grep "\["$3 | sort | uniq -c | sort -n | sed 's/ModSecurity://g'
@@ -52,6 +54,17 @@ case $1 in
 		  cat $ERROR_LOG | grep ModSecurity | grep -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | grep $3 | sed 's/\[[a-zA-Z]/\n&/g'
 		else
 		  cat $ERROR_LOG | grep ModSecurity | grep -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g'
+		fi
+	;;
+
+	#Only look at ModSecurity entries from external IPs.
+	external)
+		if [ "$2" == "count" ];then
+		  cat $ERROR_LOG | grep ModSecurity | grep -v -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g' | grep "\["$3 | sort | uniq -c | sort -n | sed 's/ModSecurity://g'
+		elif [ "$2" == "search" ];then
+		  cat $ERROR_LOG | grep ModSecurity | grep -v -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | grep $3 | sed 's/\[[a-zA-Z]/\n&/g'
+		else
+		  cat $ERROR_LOG | grep ModSecurity | grep -v -f $INTERNAL_IP_LIST | grep "severity \"$SEVERITY\"" | sed 's/\[[a-zA-Z]/\n&/g'
 		fi
 	;;
 
